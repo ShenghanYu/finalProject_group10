@@ -1,0 +1,140 @@
+---
+title: "Xuyan's Part"
+author: "Xuyan"
+date: "April 27, 2016"
+output: html_document
+---
+
+## Home Values in Zipcode Zones and Predictive Model For Homeless Center Loation
+
+In this part, we assume that we can build new homeless centers to help the homeless people with a set of services such as free/cheap food/clothing storage and delivery, mental treatment. To find the best location, we want to find a location with lower home value because it is better to reduce the cost of this non-profit organization. However, sometimes the cheap areas are also disturbed by crimes and complains. In this section, we are trying to build a home value regression model to take into consideration the living condition in each area and predict the value that each area worths. 
+
+The following plot shows the home value (price per sqaure feet) distribution in New York City, and the black zones are missing. (Data source: Zillow data)
+
+```{r, warning=FALSE, echo=FALSE}
+price = read.csv("Xuyan/city_data_clean.csv")
+price$region = as.character(price$region)
+
+pprice = price[price$price>0,]
+pprice$value = pprice$price
+
+# zip_code plots
+library(choroplethrZip)
+nyc_fips = c(36005, 36047, 36061, 36081, 36085)
+data(zip.regions)
+zip_list = data.frame(zip = unique(zip.regions[zip.regions$county.fips.numeric %in% nyc_fips,][,1]))
+zip_list$zip = as.character(zip_list$zip)
+
+library(choroplethrZip)
+title = "2015-12 home value per sqft"
+choro = zip_choropleth(pprice, title=title, county_zoom=nyc_fips)
+print(choro)
+
+```
+
+As we can see, many areas in Queens, Brooklyn, Bronx and Staten Island are not so high. Those maybe our potential candidates for the location of the center.
+
+### Variables to take into consideration
+#### Complains
+
+We regard the number of complain as a negative factor to the price because no one wants to pay for a room with a lot of living problems on a high price. We basically want to see if this factor is significantly influencing the prices. The following plot shows the distribution of the total number of the top 5 complains in each area.
+
+```{r, warning = FALSE, echo = FALSE, message=FALSE}
+load("complain.RData")
+
+# find top 5 types
+library(dplyr)
+type_group = group_by(complain,Complaint.Type)
+type_sum = summarize(type_group,cnt = n())
+top10 = type_sum[order(type_sum$cnt, decreasing = T),][1:10,]
+
+types = unique(top10[1:5,]$Complaint.Type)
+
+complain_top5 = complain[complain$Complaint.Type %in% types,]
+complain_top5_c = complain_top5[!(is.na(complain_top5$Latitude) | is.na(complain_top5$Longitude)),]
+
+comp_zip = complain %>% group_by(Incident.Zip) %>% summarize(cnt = n())
+zip_sum = as.data.frame(comp_zip[order(comp_zip$cnt, decreasing = T),])
+
+# clean zip_sum
+zip_sum$Incident.Zip = substr(zip_sum$Incident.Zip,1,5)
+zip_sum$Incident.Zip = as.character(zip_sum$Incident.Zip)
+
+zip_summary = left_join(zip_list,zip_sum,by=c("zip"="Incident.Zip"))
+zip_summary$cnt[is.na(zip_summary$cnt)] = 0
+zip_sum_f = zip_summary %>% group_by(zip) %>% summarize(count = sum(cnt))
+zip_sum_f = as.data.frame(zip_sum_f)
+
+zip_sum_f$value = zip_sum_f[,2]
+zip_sum_f$region = as.character(zip_sum_f$zip)
+title = "2010-present New York City complain count\n"
+
+# print the map
+choro = zip_choropleth(zip_sum_f, title=title, county_zoom=nyc_fips)
+print(choro)
+```
+
+An interesting finding is that the complains itself cannot be regarded as a factor because when we take into consideration of the population, we can see a great difference.
+
+```{r, warning = FALSE, echo = FALSE}
+data(df_zip_demographics)
+
+ny_demo = left_join(zip_list,df_zip_demographics,by=c("zip" = "region"))
+comp_per_capita = data.frame(zip = zip_list$zip, avg_comp = zip_sum_f$count/ny_demo$total_population)
+comp_per_capita$value = comp_per_capita[,2]
+comp_per_capita$region = comp_per_capita$zip
+
+title = "2010-present New York City complain count per person"
+choro = zip_choropleth(comp_per_capita, title=title, county_zoom=nyc_fips)
+print(choro)
+```
+
+So similarly to complains, we will use the population-standardrized data for other numerical variables. The data source for population is the 2010 US Census.
+
+#### Income
+The income of a given area is high correlated with the home value on the assumption that people will choose their home locations according to their income level. We can also verify this by doing a correlation test on the given data. As we can see, they are highly correlated so we may use this as a predictor.
+
+```{r, warning = FALSE, echo=FALSE}
+cor.test(pprice$price, pprice$avg_income)
+```
+
+#### Others
+We also want to include the crime rate and transportation condition (using Metro station numbers as proxy) to predict the price.
+
+### Regression
+
+In this part, we use a linear regression model with stepwise variable selection to fit the data, the equation is
+
+\[ \text{price} = \beta_0+\beta_1\text{complains} + \beta_2\text{income} + \beta_3\text{crimes} + \beta_4\text{transportation}\]
+
+The model fitting result is
+
+```{r, warning = FALSE, echo=FALSE}
+pprice$avg_metro = pprice$metro/pprice$population
+pprice$avg_complain = pprice$complain/pprice$population
+
+ll = lm(data = pprice, price ~ avg_income+avg_complain+avg_metro+crime_rate)
+lml =step(ll)
+
+summary(lml)
+```
+
+The final model is significant but eliminates the effect of the commplaints. And then we use this model to predict the actual value of the areas and select the areas whose prices are underrted by more than 15 percent  with crime rate and number of complains below median. The regions are in the list below and their loctions are shown in the following plot.
+
+```{r, warning = FALSE, echo=FALSE}
+pprice$pred = predict(lml,pprice)
+pprice$rate = pprice$pred/pprice$price
+# summary(pprice$rate)
+# summary(pprice$avg_complain)
+# summary(pprice$crime_rate)
+
+
+candidate = pprice[pprice$rate<0.85 & pprice$crime_rate<median(pprice$crime_rate) & pprice$avg_complain<median(pprice$avg_complain),]
+cand = data.frame(region = candidate[order(candidate$price),]$region, value = 1)
+cand$region = as.character(cand$region)
+cand$region
+
+title = "Underrated and Safe Communities"
+choro = zip_choropleth(cand, title=title, county_zoom=nyc_fips)
+print(choro)
+```

@@ -55,7 +55,7 @@ title = "2010-present New York City complain count per person"
 choro = zip_choropleth(comp_per_capita, title=title, county_zoom=nyc_fips)
 print(choro)
 
-price = read.csv("city_data_clean.csv")
+price = read.csv("Xuyan/city_data_clean.csv")
 price$region = as.character(price$region)
 
 
@@ -67,3 +67,25 @@ choro = zip_choropleth(pprice, title=title, county_zoom=nyc_fips)
 print(choro)
 
 city_data = left_join(zip_list,price,by=c("zip"="region"))
+
+pprice$avg_metro = pprice$metro/pprice$population
+pprice$avg_complain = pprice$complain/pprice$population
+
+ll = lm(data = pprice, price ~ avg_income+avg_complain+avg_metro+crime_rate)
+lml =step(ll)
+
+pprice$pred = predict(lml,pprice)
+pprice$rate = pprice$pred/pprice$price
+summary(pprice$rate)
+summary(pprice$avg_complain)
+summary(pprice$crime_rate)
+
+
+candidate = pprice[pprice$rate<0.85 & pprice$crime_rate<median(pprice$crime_rate) & pprice$avg_complain<median(pprice$avg_complain),]
+cand = data.frame(region = candidate[order(candidate$price),]$region, value = 1)
+cand$region = as.character(cand$region)
+
+
+title = "underrated and safe communities"
+choro = zip_choropleth(cand, title=title, county_zoom=nyc_fips)
+print(choro)
