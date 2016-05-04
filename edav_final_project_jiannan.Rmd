@@ -1,0 +1,82 @@
+---
+title: "DV_final"
+author: "Jiannan Zhang"
+date: "April 14, 2016"
+output: html_document
+---
+```{r,include=FALSE}
+library(RCurl)
+library (ggplot2)
+require(dplyr)
+require(gdata)
+require(ggmap)
+require(caret)
+require(stringr)
+require(randomForest)
+```
+### Frist Step: Plot the distribution of resolution time 
+```{r,warning=FALSE}
+df=read.csv("~/Desktop/CU 2016 Spr/DV CU/Final_proj/final_proj/311_15.csv",header = TRUE)
+date_df = df[order(as.Date(df$Closed.Date, format="%m/%d/%Y"),decreasing=TRUE),]
+df_open=df[df$Status=="Open",]
+df$date_diff <- as.Date(as.character(df$Closed.Date),format="%m/%d/%Y")-as.Date(as.character(df$Created.Date), format="%m/%d/%Y")
+df_hl_diff = df[df$Complaint.Type=='Homeless Encampment',1:54]
+
+get_bc_map = function(df) {
+  lon = df$Longitude
+  lat = df$Latitude
+  bc_bbox <- make_bbox(lat = lat, lon = lon)
+  bc_big <- get_map(location = bc_bbox, source = "google", maptype = "terrain")
+  return (bc_big)
+}
+
+bc_map = get_bc_map(df_hl_diff)
+df_hl_diff$date_diff = as.numeric(df_hl_diff$date_diff)
+ggmap(bc_map)+geom_point(data=df_hl_diff, mapping = aes(x=Longitude,y=Latitude,color = factor(df_hl_diff$date_diff)))+labs(title="Homeless Encampment Issue Solving Time Distribution",x="Longtitude",y="Latitude",colour = "Length of Time")
+```
+
+### Second Step: Choose features for predictive model.
+```{r,warning=FALSE}
+# df_hl_diff is a df only for HE issue
+#levels(df_hl_diff$Agency.Name) #"Internal Affairs Bureau", "New York City PolicDepartment", "NYPD"
+# levels(df_hl_diff$Borough)
+# levels(df_hl_diff$Descriptor) # 46 features
+# levels(df_hl_diff$Location.Type) # 19 remove "" remember
+df_pred = df_hl_diff[,c("Address.Type","Borough","Location.Type","date_diff")]
+df_pred = df_pred[df_pred$Location.Type!= "",]
+```
+
+### Thrid Step: Building Model. I executed random forest algorithm to predict the resolution time given 32 dummy variables.
+```{r,warning=FALSE}
+df_dummies = dummyVars(~.,data = df_pred)
+df_data = as.data.frame(predict(df_dummies, newdata = df_pred)) # dummy df 
+cut_off_index = nrow(df_data)%/%4
+test_data = na.omit(df_data[1:cut_off_index,])
+train_data = na.omit(df_data[(nrow(test_data)+1):nrow(df_data),])
+names(train_data) <- gsub(" ", ".",names(train_data)) # substitute space and /
+names(train_data) <- gsub("/", ".",names(train_data))
+names(test_data) <- gsub(" ", ".",names(test_data)) # substitute space and /
+names(test_data) <- gsub("/", ".",names(test_data))
+
+rf_clf = randomForest(as.factor(date_diff)~.,data=train_data)
+print (rf_clf)
+rf_clf$importance
+pred_y = predict(rf_clf,test_data)
+```
+
+### Conclusion: 
+The OOB estimate of error rate is 12.26%, which is unbiased for the test set with the same size as the trainning set. 
+From the importance level, we can see that the factor 'Borough' has the biggest impact on the resolution time (Manhattan and Bronx have biggest MeanDecreaseGini). 'Addresss type' and 'location type' also have impact on resolution time especially the 'ADDRESS' type under 'Addresss type' and 'Residential.Building.House' type under 'location type' have high power on predicting our response variable (I also tested that Agency.Name have no impoact. It has 3 levels).
+
+### Lastly, I used the test dataset to compare the original graph and predicted graph.
+```{r, warning=FALSE}
+df_test_orig = df_hl_diff[1:cut_off_index,]
+df_test_pred = cbind(df_hl_diff[1:cut_off_index,][-ncol(df_hl_diff)],pred_y)
+bc_map_test_orig <- get_bc_map(df_test_orig)
+ggmap(bc_map_test_orig)+geom_point(data=df_test_orig, mapping = aes(x=Longitude,y=Latitude,color = factor(df_test_orig$date_diff)))+labs(title="Homeless Encampment Issue Solving Time Distribution",x="Longtitude",y="Latitude",colour = "Length of Time")
+bc_map_test_pred<- get_bc_map(df_test_pred)
+ggmap(bc_map_test_pred)+geom_point(data=df_test_pred, mapping = aes(x=Longitude,y=Latitude,color = factor(df_test_orig$date_diff)))+labs(title="Predicted Homeless Encampment Issue Solving Time Distribution",x="Longtitude",y="Latitude",colour = "Length of Time")
+```
+
+
+
