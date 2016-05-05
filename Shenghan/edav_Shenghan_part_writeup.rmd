@@ -1,0 +1,16 @@
+---
+title: "final_edav_shenghan"
+author: "Shenghan Yu"
+date: "May 5, 2016"
+output: pdf_document
+---
+
+\section{NYC Health and Mental Health Situation}
+
+According to coalitionforthehomeless.org, there are research studies showing that the large majority of homeless people in New York are suffering severe health problems and living under mental illness as well. In the spirit of finding empirical evidence from the historical data, we analyze and visualize the general health condition as well as mental health condition in the zip-code level. The data are collected from New York City Community Health Survey (CHS), which is a yearly telephone survey with an annual sample of about 8500 individual adults from five boroughs of New York City (Manhattan, Brooklyn, Queens, Bronx, and Staten Island). The respondents are asked to give a grade on the general health condition from 1 to 5, which lower score indicating  a better health. In addition, respondents are supposed to answer a list of questions regarding the stress level and mental health. A final score (0 or 1) indicating whether the subject is suffer mental health issues is computed based on the answers to those questions. Similarly, lower score indicates a better mental situation. 
+
+Here we plotted the average general health condition and mental health conditon from 2008 to 2012 respectively. One can find similar pattern in both graphs. Darker areas areassociated with worse health condition zip-code zones. In both plots, the Harlem-Bronx area and the area on the boundary of Queens and Brooklyn are the zones that attracts the attention. Both clusters suffer from severe health issues and mental illness. Combines with previous plots on the distribution of homeless complaint counts, one can find that the clusters overlaps a lot with the health condition maps here, which provides evidence that health condition distribution are somehow related with the homeless distribution. 
+
+
+\includegraphics{healthcon.png}
+\includegraphics{mentalcon.png}
