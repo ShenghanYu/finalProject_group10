@@ -1,0 +1,121 @@
+
+```{r}
+library(ggmap)
+library(lattice)
+library(ggplot2)
+setwd("/home/rohitb/Desktop/Link to Dropbox/Spring16/ExploratoryDataAnalysis/Assignments/FinalProject")
+data_complaints = read.csv("Homeless.csv")
+data_2015 = read.csv("2015.csv")
+
+names(data_complaints)
+```
+
+```{r}
+#Anaysis for resolution time and preliminary analysis
+
+data_complaints$days <- as.Date(data_complaints$Closed.Date, format="%m/%d/%Y")- as.Date(data_complaints$Created.Date, format="%m/%d/%Y")+0
+data_complaints$days[is.na(data_complaints$days)] <- 100
+
+data_2015$days <- as.Date(data_2015$Closed.Date, format="%m/%d/%Y")- as.Date(data_2015$Created.Date, format="%m/%d/%Y")+0
+data_2015$days[is.na(data_2015$days)] <- 100
+
+agg <- aggregate(days ~ Complaint.Type, data_2015, function(x) mean(x))
+
+agg
+
+check <- agg[order(agg$days),]
+
+check
+
+drawFreqChart <- function(data, column,percent,xlab){
+  freq <- table(data[,column])
+  freq <- subset(freq, freq > (percent/100)*nrow(data))
+  freq <- as.data.frame(freq)
+  colnames(freq) <- c("Type")
+  #names(freq$Type) <- c("No Evidence of the violation","Action Taken","Escaped")
+  ggplot(freq, aes(x=names(freq$Type), y=freq$Type)) + 
+    geom_bar(stat="identity", fill="lightgreen", color="grey50")+
+    coord_flip() + xlab(xlab) + ylab("Frequency")
+
+}
+
+streetSide = subset(data_complaints, Location.Type=="Street/Sidewalk" )
+encampment = subset(streetSide, Complaint.Type=="Homeless Encampment")
+
+drawFreqChart(streetSide, "Complaint.Type",0)
+drawFreqChart(streetSide,"days")
+drawFreqChart(streetSide, "Resolution.Description",10,"Resolution Description")
+drawFreqChart(data_2015,"Complaint.Type",10)
+
+freq <- table(data_2015$Complaint.Type)
+freq <- subset(freq, freq > (1/100)*nrow(data_2015))
+
+head(check,25)
+
+freq 
+mean(freq)
+```
+
+```{r}
+#code to build models
+
+names(data_2015)
+
+subset_d <- data_2015[,c("Complaint.Type","Status")]
+subset_d$days <- as.Date(data_2015$Created.Date, format="%m/%d/%Y")
+subset_d$Status <- NULL
+colnames(subset_d) <- c("Type","Date")
+
+library(plyr)
+library(randomForest)
+
+counts <- count(subset_d, c("Type","Date"))
+counts <- counts[order(counts$Date),]
+unique(counts$Date)
+check <- reshape(counts, idvar = "Date", timevar = "Type", direction = "wide")
+check[is.na(check)] <- 0
+check$homeless <- check$`freq.Homeless Encampment` + check$`freq.Homeless Person Assistance`
+check$`freq.Homeless Encampment` <- NULL
+check$`freq.Homeless Person Assistance` <- NULL
+check$Date <- NULL
+
+
+#adding weather data 
+wthr = read.csv("weather_data.csv")
+wthr2015 = wthr[wthr$Year == 2015, ]
+nrow(wthr2015)
+check$temp = wthr2015$Mean.Temperature
+
+
+#w.r.t previous day
+
+list <- check$homeless
+check <- head(check,-1)
+nrow(check)
+length(list)
+list <- list[-1]
+check$output <- list
+
+fit <- lm(output~.,data=check)
+summary(fit)
+
+#For feature importance
+
+i <- match("output",names(check))
+HomelessComplaints <- randomForest(check[-i],check[[i]], ntree=500)
+varImpPlot(HomelessComplaints)
+
+check$homeless
+check$output
+
+
+#feature selection
+library(caret)
+library(mlbench)
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+i <- match("output",names(check))
+results <- rfe(check[-i], check[[i]], sizes=c(1:100), rfeControl=control)
+plot(results, type=c("g", "o"))
+predictors(results)
+
+```
